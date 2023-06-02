@@ -13,6 +13,8 @@ import com.intellij.openapi.project.DumbAwareToggleAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.vfs.JarFileSystem;
+import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowFactory;
@@ -34,6 +36,9 @@ import com.itcodebox.notebooks.utils.ImportUtil;
 import icons.PluginIcons;
 import org.jetbrains.annotations.NotNull;
 
+import java.awt.*;
+import java.io.File;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -68,7 +73,8 @@ public class NoteWindowFactory implements ToolWindowFactory, DumbAware {
         toolWindow.setTitleActions(List.of(
                 initTipsAction(),
                 initRefreshAction(),
-                initExpandableAction()
+                initExpandableAction(),
+                initActionImportCodeQualityJson()
         ));
         // 强制转换
         ToolWindowEx tw = (ToolWindowEx) toolWindow;
@@ -206,6 +212,48 @@ public class NoteWindowFactory implements ToolWindowFactory, DumbAware {
                 // 后台开始导入JSON 文件到数据库
                 ImportUtil.importJsonFile(project, selectedFile);
 
+            }
+
+            @Override
+            public void update(@NotNull AnActionEvent e) {
+                e.getPresentation().setEnabled(!AppSettingsState.getInstance().readOnlyMode);
+            }
+        };
+    }
+
+
+    private DumbAwareAction initActionImportCodeQualityJson() {
+        return new DumbAwareAction(message("mainPanel.action.importJson.fileChooser.title.code_quality"), "导入代码质量扫描结果", AllIcons.ToolbarDecorator.Import) {
+            @Override
+            public void actionPerformed(@NotNull AnActionEvent anActionEvent) {
+                //刷新Table (导入前,同步刷新下数据, 看下其他工具, 有没有修改数据)
+                ApplicationManager.getApplication().getMessageBus().syncPublisher(RecordListener.TOPIC)
+                        .onRefresh();
+
+                String basePath = project.getBasePath();
+                // todo 找到repot.js的路径
+                String report = basePath + "";
+                // 找到代码质量扫描结果文件
+                VirtualFile selectedFile = LocalFileSystem.getInstance().findFileByPath(report);
+                if (selectedFile == null) {
+                    selectedFile = JarFileSystem.getInstance().findFileByPath(report);
+                }
+
+                if (selectedFile == null) {
+                    Messages.showErrorDialog(project, message("detailPanel.openFile.notFind.msg"), message("detailPanel.openFile.notFind.title"));
+                    return;
+                }
+                if (selectedFile.isDirectory()) {
+                    try {
+                        Desktop.getDesktop().open(new File(selectedFile.getPath()));
+                    } catch (IOException ioException) {
+                        Messages.showErrorDialog(project, message("detailPanel.openFile.ioException.msg"), message("detailPanel.openFile.ioException.title"));
+                    }
+                    return;
+                }
+                selectedFile.refresh(false, false);
+                // 后台开始导入JSON 文件到数据库
+                ImportUtil.importCodeQualityJsonFile(project, selectedFile);
             }
 
             @Override

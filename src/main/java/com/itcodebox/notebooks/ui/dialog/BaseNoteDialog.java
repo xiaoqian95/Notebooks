@@ -164,6 +164,7 @@ public  class BaseNoteDialog extends DialogWrapper {
         fieldPath.setText(note.getSource() == null ? project.getBasePath() : note.getSource());
         //把光标位置移动到前面
         //textPaneContent.setCaretPosition(0);
+        System.out.println("BaseNoteDialog");
         fieldRange.setText(note.getOffsetStart()+" : "+note.getOffsetEnd());
     }
 

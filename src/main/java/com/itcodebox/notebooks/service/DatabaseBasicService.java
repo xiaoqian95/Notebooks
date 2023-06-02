@@ -156,6 +156,9 @@ public class DatabaseBasicService {
                 EDITOR_OFFSET_END+" INTEGER," +
                 IMAGE_RECORDS+" TEXT,"+
                 "type TEXT," +
+                "line_num INTEGER  DEFAULT 0," +
+                "column_num INTEGER  DEFAULT 0," +
+                "import_source INTEGER  DEFAULT 0," +
                 "create_time INTEGER," +
                 "update_time INTEGER" +
                 ")";

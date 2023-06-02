@@ -23,18 +23,18 @@ public class NoteDaoImpl extends BaseDAO<Note> implements NoteDao {
         return instance;
     }
 
-    private static final String SELECT_SQL = "select id,title,chapter_id,notebook_id,create_time,update_time,show_order,content,description,source,type,offset_start,offset_end,image_records from note ";
+    private static final String SELECT_SQL = "select id,title,chapter_id,notebook_id,create_time,update_time,show_order,content,description,source,type,offset_start,offset_end,image_records,line_num,column_num,import_source from note ";
 
     @Override
     public void insert(Connection conn, Note[] notes) {
         if (notes == null || notes.length == 0) {
             return;
         }
-        String sql = "insert into note(show_order,title,chapter_id,notebook_id,create_time,update_time,content,description,source,type,offset_start,offset_end,image_records) values(ifnull((select seq from sqlite_sequence where name='note'),0)+1,?,?,?,?,?,ifnull(?,''),ifnull(?,''),ifnull(?,''),ifnull(?,''),?,?,?)";
+        String sql = "insert into note(show_order,title,chapter_id,notebook_id,create_time,update_time,content,description,source,type,offset_start,offset_end,image_records,line_num,column_num,import_source) values(ifnull((select seq from sqlite_sequence where name='note'),0)+1,?,?,?,?,?,ifnull(?,''),ifnull(?,''),ifnull(?,''),ifnull(?,''),?,?,?,?,?,?)";
         int size = notes.length;
         if (size == 1) {
             Note note = notes[0];
-            update(conn, sql, note.getTitle(), note.getChapterId(), note.getNotebookId(), note.getCreateTime(), note.getUpdateTime(), note.getContent(), note.getDescription(), note.getSource(), note.getType(),note.getOffsetStart(),note.getOffsetEnd(),note.getImageRecords());
+            update(conn, sql, note.getTitle(), note.getChapterId(), note.getNotebookId(), note.getCreateTime(), note.getUpdateTime(), note.getContent(), note.getDescription(), note.getSource(), note.getType(),note.getOffsetStart(),note.getOffsetEnd(),note.getImageRecords(), note.getLineNum(), note.getColumnNum(), note.getImportSource());
         } else {
             Object[][] args = new Object[size][12];
             for (int i = 0; i < size; i++) {
@@ -51,6 +51,9 @@ public class NoteDaoImpl extends BaseDAO<Note> implements NoteDao {
                 args[i][9] = note.getOffsetStart();
                 args[i][10] = note.getOffsetEnd();
                 args[i][11] = note.getImageRecords();
+                args[i][12] = note.getLineNum();
+                args[i][13] = note.getColumnNum();
+                args[i][14] = note.getImportSource();
             }
             updateBatch(conn, sql, args);
         }

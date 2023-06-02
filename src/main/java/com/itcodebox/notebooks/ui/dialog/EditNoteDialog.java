@@ -222,6 +222,7 @@ public class EditNoteDialog extends BaseNoteDialog {
             start = Integer.parseInt(ss[0].trim());
             end = Integer.parseInt(ss[1].trim());
         }
+        System.out.println("rangeChanged()");
         return (start != note.getOffsetStart()) || (end != note.getOffsetEnd());
     }
 

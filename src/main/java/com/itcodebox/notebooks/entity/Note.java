@@ -22,10 +22,37 @@ public class Note extends Record {
     private String source;
     private int offsetStart;
     private int offsetEnd;
+    private int lineNum;
+    private int columnNum;
+    private int importSource;
     private String type;
     private String imageRecords;
     public String getImageRecords() {
         return imageRecords;
+    }
+
+    public int getImportSource() {
+        return importSource;
+    }
+
+    public void setImportSource(int importSource) {
+        this.importSource = importSource;
+    }
+
+    public int getLineNum() {
+        return lineNum;
+    }
+
+    public void setLineNum(int lineNum) {
+        this.lineNum = lineNum;
+    }
+
+    public int getColumnNum() {
+        return columnNum;
+    }
+
+    public void setColumnNum(int columnNum) {
+        this.columnNum = columnNum;
     }
 
     public void setImageRecords(String imageRecords) {
@@ -112,6 +139,7 @@ public class Note extends Record {
     }
 
     public int getOffsetStart() {
+        System.out.println("getOffsetStart");
         return offsetStart;
     }
 
@@ -120,6 +148,7 @@ public class Note extends Record {
     }
 
     public int getOffsetEnd() {
+        System.out.println("getOffsetEnd");
         return offsetEnd;
     }
 

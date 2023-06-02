@@ -2,6 +2,8 @@ package com.itcodebox.notebooks.utils;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
@@ -30,9 +32,12 @@ import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 import static com.itcodebox.notebooks.utils.NotebooksBundle.message;
 
@@ -149,6 +154,71 @@ public class ImportUtil {
         });
     }
 
+  public static void importCodeQualityJsonFile(Project project, VirtualFile selectedFile) {
+        ProgressManager.getInstance().run(new Task.Backgroundable(project, message("notify.import.backgroundTask.title.code_quality"), true) {
+            @Override
+            public void run(@NotNull ProgressIndicator indicator) {
+                indicator.setText("Import images");
+                // 开启只读模式
+                publishReadOnlyMode(project, true);
+                // 需要经常调用此方法, 确保用户点击了取消的时候,可以及时停止
+                indicator.checkCanceled();
+                indicator.setFraction(0.0);
+                indicator.setIndeterminate(false);
+                // 解析JSON成为java对象
+                LinkedHashMap<Notebook, LinkedHashMap<Chapter, List<Note>>> notebookCollection = processCodeQualityJson(project, selectedFile);
+                if (notebookCollection == null) {
+                    return;
+                }
+                Set<Map.Entry<Notebook, LinkedHashMap<Chapter, List<Note>>>> entries = notebookCollection.entrySet();
+                int size = entries.size();
+                if (size == 0) {
+                    return;
+                }
+                int index = 0;
+                NotebookServiceImpl notebookService = NotebookServiceImpl.getInstance();
+                for (Map.Entry<Notebook, LinkedHashMap<Chapter, List<Note>>> entry : entries) {
+                    indicator.checkCanceled();
+                    Notebook notebookInJson = entry.getKey();
+                    Notebook notebookInDb = notebookService.findByTitle(notebookInJson.getTitle());
+                    // 如果存在,进行同名处理
+                    if (notebookInDb != null) {
+                        indicator.setText("Import " + notebookInDb.getTitle());
+                        if (nameConflictHandler(indicator, entry, notebookInDb, CHOOSE_OVERWRITE)) {
+                            continue;
+                        }
+                    } else {
+                        indicator.setText("Import " + entry.getKey().getTitle());
+                        addNotebookFromJson(indicator, entry);
+                    }
+                    double fraction = (++index) * 1.0 / size;
+                    indicator.setFraction(fraction);
+                }
+                NotifyUtil.showInfoNotification(project, PluginConstant.NOTIFICATION_ID_IMPORT_EXPORT, message("notify.import.success.title"), message("notify.import.success.message"));
+
+            }
+
+            /**
+             * 无论是取消, 成功,还是错误,最后都会调用到onFinished了
+             * 所以在onFinished方法里刷新
+             */
+            @Override
+            public void onFinished() {
+                //刷新Table
+                ApplicationManager.getApplication().getMessageBus().syncPublisher(RecordListener.TOPIC)
+                        .onRefresh();
+                //解除只读模式
+                publishReadOnlyMode(project, false);
+            }
+
+            @Override
+            public void onThrowable(@NotNull Throwable error) {
+                //error.printStackTrace();
+                NotifyUtil.showErrorNotification(project, PluginConstant.NOTIFICATION_ID_IMPORT_EXPORT, message("notify.import.throwable.title"), message("notify.import.throwable.message"), error.getMessage());
+            }
+        });
+    }
+
     public static void publishReadOnlyMode(Project project, boolean b) {
         AppSettingsState.getInstance().readOnlyMode = b;
         ApplicationManager.getApplication()
@@ -184,6 +254,93 @@ public class ImportUtil {
                     message("notify.import.jsonIOException.title"), message("notify.import.jsonIOException.message"), exception.getMessage());
         }
         return notebooksCollection;
+    }
+
+    /**
+     * 解析JSON数据为Java数据
+     *
+     * @param project      当前工程
+     * @param selectedFile 选择的文件
+     * @return java数据
+     */
+    @Nullable
+    private static LinkedHashMap<Notebook, LinkedHashMap<Chapter, List<Note>>> processCodeQualityJson(Project project, VirtualFile selectedFile) {
+        LinkedHashMap<Notebook, LinkedHashMap<Chapter, List<Note>>> notebooksCollection = new LinkedHashMap<>();
+        try {
+            String path = selectedFile.getPath();
+            List<String> strings = Files.readAllLines(Paths.get(path));
+            String s = strings.get(0);
+            String jsonString = s.substring(113, s.length() - 6);
+            ObjectMapper objectMapper = new ObjectMapper();
+            objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES,false);
+            CodeQualityResult result = objectMapper.readValue(jsonString, CodeQualityResult.class);
+            List<Issue> issues = result.getAnalysis().get(0).getIssues();
+            String basePath = project.getBasePath();
+            // 按照严重等级分章节
+            Map<String, List<Issue>> severityMap = issues.stream().collect(Collectors.groupingBy(Issue::getSeverity));
+            for (Map.Entry<String, List<Issue>> severityEntry : severityMap.entrySet()) {
+                String severity = severityEntry.getKey();
+                String noteTitle = "";
+                if ("LOW".equals(severity)) {
+                    noteTitle = "次要";
+                } else if ("HIGHEST".equals(severity)) {
+                    noteTitle = "阻断";
+                }else if ("MEDIUM".equals(severity)) {
+                    noteTitle = "主要";
+                }
+                List<Issue> issueList = severityEntry.getValue();
+                Notebook notebook = new Notebook();
+                notebook.setTitle(noteTitle);
+                notebook.setCreateTime(System.currentTimeMillis());
+                notebook.setUpdateTime(System.currentTimeMillis());
+                Map<String, List<Issue>> collect = issueList.stream().collect(Collectors.groupingBy(Issue::getName));
+                LinkedHashMap<Chapter, List<Note>> chapterListLinkedHashMap = new LinkedHashMap<>();
+                for (Map.Entry<String, List<Issue>> entry : collect.entrySet()) {
+                    String key = entry.getKey();
+                    List<Issue> value = entry.getValue();
+                    Chapter chapter = new Chapter();
+                    chapter.setTitle(key);
+                    chapter.setCreateTime(System.currentTimeMillis());
+                    chapter.setUpdateTime(System.currentTimeMillis());
+                    List<Note> list = value.stream().map(ImportUtil::fromIssue).collect(Collectors.toList());
+                    // todo 需要验证路径是否正确
+                    list.forEach(i -> i.setSource(basePath + "/" + i.getSource()));
+                    chapterListLinkedHashMap.put(chapter, list);
+                }
+                notebooksCollection.put(notebook, chapterListLinkedHashMap);
+            }
+        } catch (JsonProcessingException e) {
+            StringWriter sw = new StringWriter();
+            PrintWriter pw = new PrintWriter(sw);
+            e.printStackTrace(pw);
+            String msg = sw.toString();
+            NotifyUtil.showImportErrorNotification(project, PluginConstant.NOTIFICATION_ID_IMPORT_EXPORT,
+                    message("notify.import.jsonException.title"),
+                    message("notify.import.jsonException.message"),
+                    e.getMessage() + System.lineSeparator() + msg);
+        } catch (IOException exception) {
+            NotifyUtil.showErrorNotification(project, PluginConstant.NOTIFICATION_ID_IMPORT_EXPORT,
+                    message("notify.import.jsonIOException.title"), message("notify.import.jsonIOException.message"), exception.getMessage());
+        }
+        return notebooksCollection;
+    }
+
+    private static Note fromIssue(Issue issue){
+        String path = issue.getPath();
+        String[] split = path.split("/");
+        String className = split[split.length - 1];
+        Note note = new Note();
+        note.setCreateTime(System.currentTimeMillis());
+        note.setUpdateTime(System.currentTimeMillis());
+        note.setColumnNum(issue.getColumn());
+        note.setLineNum(issue.getLine());
+        note.setContent(issue.getPath() + "("+issue.getLine() + ":" + issue.getColumn() + ")" + "\n" + issue.getDescription());
+        note.setTitle(className);
+        note.setImportSource(1);
+        note.setDescription("");
+        note.setSource(issue.getPath());
+        note.setType("java");
+        return note;
     }
 
     /**
@@ -394,6 +551,113 @@ public class ImportUtil {
             return "Choose{" +
                     "doNotAsk=" + doNotAsk +
                     ", exitCode=" + exitCode +
+                    '}';
+        }
+    }
+
+    private static class CodeQualityResult{
+        private List<Analyses> analysis;
+
+        public List<Analyses> getAnalysis() {
+            return analysis;
+        }
+
+        public void setAnalysis(List<Analyses> analysis) {
+            this.analysis = analysis;
+        }
+
+        @Override
+        public String toString() {
+            return "CodeQualityResult{" +
+                    "analysis=" + analysis +
+                    '}';
+        }
+    }
+
+    private static class Analyses{
+        private List<Issue> issues;
+
+        public List<Issue> getIssues() {
+            return issues;
+        }
+
+        public void setIssues(List<Issue> issues) {
+            this.issues = issues;
+        }
+
+        @Override
+        public String toString() {
+            return "Analyses{" +
+                    "issues=" + issues +
+                    '}';
+        }
+    }
+
+    private static class Issue{
+        private int column;
+        private String description;
+        private int line;
+        private String name;
+        private String path;
+        private String severity;
+
+        public int getColumn() {
+            return column;
+        }
+
+        public void setColumn(int column) {
+            this.column = column;
+        }
+
+        public int getLine() {
+            return line;
+        }
+
+        public void setLine(int line) {
+            this.line = line;
+        }
+
+        public String getDescription() {
+            return description;
+        }
+
+        public void setDescription(String description) {
+            this.description = description;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        public String getPath() {
+            return path;
+        }
+
+        public void setPath(String path) {
+            this.path = path;
+        }
+
+        public String getSeverity() {
+            return severity;
+        }
+
+        public void setSeverity(String severity) {
+            this.severity = severity;
+        }
+
+        @Override
+        public String toString() {
+            return "Issue{" +
+                    "column='" + column + '\'' +
+                    ", description='" + description + '\'' +
+                    ", line='" + line + '\'' +
+                    ", name='" + name + '\'' +
+                    ", path='" + path + '\'' +
+                    ", severity='" + severity + '\'' +
                     '}';
         }
     }

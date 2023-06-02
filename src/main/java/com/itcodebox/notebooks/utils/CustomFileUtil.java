@@ -9,6 +9,8 @@ import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.io.FileUtil;
+import com.intellij.openapi.vfs.JarFileSystem;
+import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.itcodebox.notebooks.constant.PluginConstant;
 import com.itcodebox.notebooks.entity.ImageRecord;
@@ -16,6 +18,7 @@ import org.apache.commons.io.file.PathUtils;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.Nullable;
 
+import java.awt.*;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -205,5 +208,26 @@ public class CustomFileUtil {
     public static void deleteImagesAndThumb(String imageName) throws IOException {
         PathUtils.deleteFile(PluginConstant.IMAGE_DIRECTORY_PATH.resolve(imageName));
         PathUtils.deleteFile(PluginConstant.IMAGE_DIRECTORY_PATH.resolve(CustomUIUtil.convertToThumbName(imageName)));
+    }
+
+    public static VirtualFile getFileByPath(String path){
+        VirtualFile selectedFile = LocalFileSystem.getInstance().findFileByPath(path);
+        if (selectedFile == null) {
+            selectedFile = JarFileSystem.getInstance().findFileByPath(path);
+        }
+
+        if (selectedFile == null) {
+            Messages.showErrorDialog("没有找到文件", "ERROR");
+            return null;
+        }
+        if (selectedFile.isDirectory()) {
+            try {
+                Desktop.getDesktop().open(new File(selectedFile.getPath()));
+            } catch (IOException ioException) {
+                Messages.showErrorDialog("没有找到文件", "ERROR");
+            }
+            return selectedFile;
+        }
+        return null;
     }
 }

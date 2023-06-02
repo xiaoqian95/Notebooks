@@ -630,11 +630,11 @@ public class DetailPanel extends JPanel {
         actionGroup.add(initSaveAction());
         actionGroup.add(initActionCopyContent());
         actionGroup.add(initInsertAction());
-        actionGroup.add(initOpenSourceFile());
         actionGroup.addSeparator();
         actionGroup.add(initCollapseAction());
         actionGroup.add(initDescPaneVisible());
         actionGroup.addSeparator();
+        actionGroup.add(initOpenSourceFile());
 
         ActionToolbar actionToolbar = actionManager.createActionToolbar("ACTION_GROUP_NOTE", actionGroup, true);
         JComponent component = actionToolbar.getComponent();
@@ -726,6 +726,19 @@ public class DetailPanel extends JPanel {
                 if (fileEditors.length > 0) {
                     Editor editor = FileEditorManager.getInstance(project).getSelectedTextEditor();
                     if (editor != null) {
+                        if (1 == note.getImportSource()) {
+                            //移动插入符的位置
+                            CaretModel caretModel = editor.getCaretModel();
+                            int lineNum = note.getLineNum();
+                            int columnNum = note.getColumnNum();
+                            LogicalPosition pos = new LogicalPosition(lineNum,columnNum);
+                            caretModel.moveToLogicalPosition(pos);
+//                            VisualPosition vis = new VisualPosition(62,21);
+//                            editor.getCaretModel().moveToVisualPosition(vis);
+                            //滚动到插入符的位置
+                            editor.getScrollingModel().scrollToCaret(ScrollType.CENTER_UP);
+                            return;
+                        }
                         Document document = editor.getDocument();
                         int maxLen = document.getTextLength();
                         int offsetStart = note.getOffsetStart();
